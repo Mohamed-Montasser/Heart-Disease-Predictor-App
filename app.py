@@ -115,19 +115,25 @@ def preprocess_input(input_data, scaler, feature_info, feature_selection):
     
     processed_data = {}
     
-    # Only process the features that the model expects
-    numerical_features = [f for f in feature_info.get('numerical_features', []) if f in selected_features]
-    categorical_features = [f for f in feature_info.get('categorical_features', []) if f in selected_features]
+    # Get ALL numerical features that the scaler was trained on
+    all_numerical_features = feature_info.get('numerical_features', [])
     
-    # Scale numerical features that are in selected features
-    if numerical_features:
-        numerical_values = np.array([input_data[feature] for feature in numerical_features]).reshape(1, -1)
-        scaled_numerical = scaler.transform(numerical_values)[0]
+    # Create a complete input array with ALL numerical features in the correct order
+    numerical_values = []
+    for feature in all_numerical_features:
+        numerical_values.append(input_data[feature])
+    
+    # Scale ALL numerical features (as the scaler expects)
+    if all_numerical_features:
+        numerical_array = np.array(numerical_values).reshape(1, -1)
+        scaled_numerical = scaler.transform(numerical_array)[0]
         
-        for i, feature in enumerate(numerical_features):
+        # Store scaled values for numerical features
+        for i, feature in enumerate(all_numerical_features):
             processed_data[feature] = scaled_numerical[i]
     
-    # Add categorical features that are in selected features
+    # Add categorical features
+    categorical_features = feature_info.get('categorical_features', [])
     for feature in categorical_features:
         if feature in input_data:
             processed_data[feature] = input_data[feature]
@@ -251,8 +257,17 @@ def show_prediction_page(model, scaler, feature_info, feature_selection):
             selected_features = list(processed_data.keys())
             st.warning("⚠️ Using all features as fallback - feature selection info not available")
         
+        # Debug information
+        st.sidebar.info(f"Selected features: {selected_features}")
+        st.sidebar.info(f"Available processed features: {list(processed_data.keys())}")
+        
         # Create feature array with ONLY the selected features in the correct order
-        feature_array = np.array([processed_data[feature] for feature in selected_features]).reshape(1, -1)
+        try:
+            feature_array = np.array([processed_data[feature] for feature in selected_features]).reshape(1, -1)
+        except KeyError as e:
+            st.error(f"❌ Missing feature in processed data: {e}")
+            st.info("This might indicate a mismatch between your model's expected features and available data.")
+            return
         
         # Make prediction
         try:
@@ -323,7 +338,8 @@ def show_prediction_page(model, scaler, feature_info, feature_selection):
                 
         except Exception as e:
             st.error(f"❌ Error making prediction: {e}")
-            st.info("This usually happens when the model expects different features than provided.")
+            st.info("This usually happens when there's a mismatch between the model's expected features and the provided data.")
+
 
 def create_feature_explanations():
     """Create explanations for each feature"""
