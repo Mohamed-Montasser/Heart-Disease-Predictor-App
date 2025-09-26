@@ -101,34 +101,229 @@ def load_model():
         st.error(f"❌ Error loading model files: {e}")
         return None, None, None, None
 
-def preprocess_input(input_data, scaler, feature_info):
-    """Preprocess user input for prediction"""
-    if scaler is None or feature_info is None:
+def preprocess_input(input_data, scaler, feature_info, feature_selection):
+    """Preprocess user input for prediction using only selected features"""
+    if scaler is None or feature_info is None or feature_selection is None:
         return input_data
-        
+    
+    # Get the selected features that the model was trained on
+    selected_features = feature_selection.get('selected_features', [])
+    
+    # If no selected features, fall back to all features
+    if not selected_features:
+        selected_features = feature_info.get('numerical_features', []) + feature_info.get('categorical_features', [])
+    
     processed_data = {}
     
-    # Numerical features scaling
-    numerical_features = feature_info.get('numerical_features', [])
-    for feature in numerical_features:
-        if feature in input_data:
-            processed_data[feature] = input_data[feature]
+    # Only process the features that the model expects
+    numerical_features = [f for f in feature_info.get('numerical_features', []) if f in selected_features]
+    categorical_features = [f for f in feature_info.get('categorical_features', []) if f in selected_features]
     
-    # Scale numerical features
+    # Scale numerical features that are in selected features
     if numerical_features:
-        numerical_values = np.array([processed_data[feature] for feature in numerical_features]).reshape(1, -1)
+        numerical_values = np.array([input_data[feature] for feature in numerical_features]).reshape(1, -1)
         scaled_numerical = scaler.transform(numerical_values)[0]
         
         for i, feature in enumerate(numerical_features):
             processed_data[feature] = scaled_numerical[i]
     
-    # Categorical features
-    categorical_features = feature_info.get('categorical_features', [])
+    # Add categorical features that are in selected features
     for feature in categorical_features:
         if feature in input_data:
             processed_data[feature] = input_data[feature]
     
     return processed_data
+
+def show_prediction_page(model, scaler, feature_info, feature_selection):
+    """Display the prediction interface"""
+    st.header("🎯 Heart Disease Risk Prediction")
+    
+    if model is None:
+        st.error("❌ Model not loaded. Please check the GitHub URLs and try again.")
+        st.info("""
+        **Troubleshooting tips:**
+        - Ensure your GitHub repository is public
+        - Check that the model files exist in the correct path
+        - Verify the GitHub raw URLs are correct
+        """)
+        return
+    
+    # Create input form
+    with st.form("prediction_form"):
+        st.subheader("Patient Information")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("#### Demographic Information")
+            age = st.slider("**Age** (years)", 20, 100, 50, 
+                           help="Patient's age in years")
+            sex = st.radio("**Sex**", ["Female", "Male"], 
+                          help="Biological sex of the patient")
+            
+            cp_options = {
+                "Typical Angina": 0,
+                "Atypical Angina": 1, 
+                "Non-anginal Pain": 2,
+                "Asymptomatic": 3
+            }
+            cp = st.selectbox("**Chest Pain Type**", list(cp_options.keys()),
+                             help="Type of chest pain experienced")
+        
+        with col2:
+            st.markdown("#### Clinical Measurements")
+            trestbps = st.slider("**Resting Blood Pressure** (mm Hg)", 80, 200, 120,
+                                help="Resting blood pressure in mm Hg")
+            chol = st.slider("**Cholesterol** (mg/dl)", 100, 600, 200,
+                            help="Serum cholesterol level in mg/dl")
+            fbs = st.radio("**Fasting Blood Sugar > 120 mg/dl**", ["No", "Yes"],
+                          help="Fasting blood sugar exceeding 120 mg/dl")
+            
+            restecg_options = {
+                "Normal": 0,
+                "ST-T Wave Abnormality": 1,
+                "Left Ventricular Hypertrophy": 2
+            }
+            restecg = st.selectbox("**Resting ECG Results**", list(restecg_options.keys()))
+        
+        with col3:
+            st.markdown("#### Exercise & Additional Parameters")
+            thalach = st.slider("**Max Heart Rate Achieved**", 60, 220, 150,
+                               help="Maximum heart rate during exercise")
+            exang = st.radio("**Exercise-Induced Angina**", ["No", "Yes"],
+                            help="Chest pain during exercise")
+            oldpeak = st.slider("**ST Depression**", 0.0, 6.0, 1.0, 0.1,
+                               help="ST depression induced by exercise")
+            
+            slope_options = {
+                "Upsloping": 0,
+                "Flat": 1,
+                "Downsloping": 2
+            }
+            slope = st.selectbox("**Slope of Peak Exercise ST Segment**", 
+                                list(slope_options.keys()))
+        
+        # Additional features in expander
+        with st.expander("Advanced Parameters"):
+            col4, col5 = st.columns(2)
+            with col4:
+                ca = st.slider("**Number of Major Vessels** (0-3)", 0, 3, 0,
+                              help="Number of major vessels colored by fluoroscopy")
+            with col5:
+                thal_options = {
+                    "Normal": 1,
+                    "Fixed Defect": 2,
+                    "Reversible Defect": 3
+                }
+                thal = st.selectbox("**Thalassemia**", list(thal_options.keys()))
+        
+        # Submit button
+        submitted = st.form_submit_button("🔍 Predict Heart Disease Risk", 
+                                         use_container_width=True)
+    
+    # Process prediction when form is submitted
+    if submitted:
+        # Convert inputs to numerical values
+        input_data = {
+            'age': age,
+            'sex': 1 if sex == "Male" else 0,
+            'cp': cp_options[cp],
+            'trestbps': trestbps,
+            'chol': chol,
+            'fbs': 1 if fbs == "Yes" else 0,
+            'restecg': restecg_options[restecg],
+            'thalach': thalach,
+            'exang': 1 if exang == "Yes" else 0,
+            'oldpeak': oldpeak,
+            'slope': slope_options[slope],
+            'ca': ca,
+            'thal': thal_options[thal]
+        }
+        
+        # Preprocess input - pass feature_selection parameter
+        processed_data = preprocess_input(input_data, scaler, feature_info, feature_selection)
+        
+        # Get the selected features that the model expects
+        selected_features = feature_selection.get('selected_features', []) if feature_selection else []
+        
+        # If no selected features available, use all features as fallback
+        if not selected_features:
+            selected_features = list(processed_data.keys())
+            st.warning("⚠️ Using all features as fallback - feature selection info not available")
+        
+        # Create feature array with ONLY the selected features in the correct order
+        feature_array = np.array([processed_data[feature] for feature in selected_features]).reshape(1, -1)
+        
+        # Make prediction
+        try:
+            prediction = model.predict(feature_array)[0]
+            probability = model.predict_proba(feature_array)[0][1]
+            
+            # Display results
+            st.markdown("---")
+            st.subheader("📊 Prediction Results")
+            
+            result_col1, result_col2 = st.columns([2, 1])
+            
+            with result_col1:
+                if prediction == 1:
+                    st.markdown('<div class="high-risk">', unsafe_allow_html=True)
+                    st.error(f"🚨 **High Risk of Heart Disease**")
+                    st.write(f"**Probability**: {probability:.1%}")
+                    st.write("**Recommendation**: Consult a healthcare professional for further evaluation.")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="low-risk">', unsafe_allow_html=True)
+                    st.success(f"✅ **Low Risk of Heart Disease**")
+                    st.write(f"**Probability**: {probability:.1%}")
+                    st.write("**Recommendation**: Maintain healthy lifestyle with regular checkups.")
+                    st.markdown('</div>', unsafe_allow_html=True)
+            
+            with result_col2:
+                # Probability gauge
+                fig, ax = plt.subplots(figsize=(6, 2))
+                ax.barh([0], [probability], color='#e63946' if prediction == 1 else '#2a9d8f', height=0.5)
+                ax.set_xlim(0, 1)
+                ax.set_xlabel('Heart Disease Probability')
+                ax.set_yticks([])
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
+                ax.spines['left'].set_visible(False)
+                st.pyplot(fig)
+                
+                st.metric("Risk Score", f"{probability:.1%}")
+            
+            # Display which features were actually used
+            st.info(f"**Model used {len(selected_features)} features:** {', '.join(selected_features)}")
+            
+            # Feature importance explanation
+            st.subheader("🔍 Key Contributing Factors")
+            
+            if feature_selection and 'selected_features' in feature_selection:
+                important_features = feature_selection['selected_features'][:5]
+                
+                for i, feature in enumerate(important_features, 1):
+                    value = input_data[feature]
+                    explanations = create_feature_explanations()
+                    
+                    with st.expander(f"{i}. {feature.upper()} = {value}"):
+                        st.write(f"**Description**: {explanations.get(feature, 'No description available')}")
+                        st.write(f"**Current Value**: {value}")
+                        # Add interpretation based on value
+                        if feature == 'thalach' and value < 120:
+                            st.write("🟡 **Note**: Lower maximum heart rate may indicate reduced cardiovascular fitness")
+                        elif feature == 'oldpeak' and value > 2:
+                            st.write("🟡 **Note**: Higher ST depression may indicate exercise-induced ischemia")
+                        elif feature == 'exang' and value == 1:
+                            st.write("🟡 **Note**: Exercise-induced angina is a significant risk factor")
+                        elif feature == 'ca' and value > 0:
+                            st.write("🟡 **Note**: Presence of major vessel involvement increases risk")
+            else:
+                st.info("Feature importance analysis not available.")
+                
+        except Exception as e:
+            st.error(f"❌ Error making prediction: {e}")
+            st.info("This usually happens when the model expects different features than provided.")
 
 def create_feature_explanations():
     """Create explanations for each feature"""
@@ -305,8 +500,7 @@ def show_prediction_page(model, scaler, feature_info, feature_selection):
         }
         
         # Preprocess input
-        processed_data = preprocess_input(input_data, scaler, feature_info)
-        
+        processed_data = preprocess_input(input_data, scaler, feature_info, feature_selection)        
         # Convert to array for prediction
         all_features = feature_info.get('numerical_features', []) + feature_info.get('categorical_features', [])
         feature_array = np.array([processed_data[feature] for feature in all_features]).reshape(1, -1)
