@@ -63,7 +63,7 @@ def load_model():
     """Load the trained model and preprocessing objects from GitHub"""
     try:
         # Replace with your actual GitHub raw content URLs
-        base_url = "https://raw.githubusercontent.com/yourusername/your-repo/main/models/"
+        base_url = "https://raw.githubusercontent.com/Mohamed-Montasser/Heart-Disease-Predictor-App/main/models/All Models/"
         
         # Model files URLs
         model_url = base_url + "tuned_best_model.pkl"
